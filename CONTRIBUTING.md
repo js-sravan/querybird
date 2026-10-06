@@ -183,7 +183,7 @@ Update README with DMG build instructions
 
 ## Reporting Bugs
 
-Open an [Issue](https://github.com/sravanjs/querybird/issues) and include:
+Open an [Issue]([https://github.com/sravanjs/querybird/issues](https://github.com/js-sravan/querybird/issues)) and include:
 
 - QueryBird version (from Help → About)
 - macOS version
@@ -195,7 +195,7 @@ Open an [Issue](https://github.com/sravanjs/querybird/issues) and include:
 
 ## Requesting Features
 
-Open an [Issue](https://github.com/sravanjs/querybird/issues) with the label `enhancement` and describe:
+Open an [Issue]([https://github.com/sravanjs/querybird/issues](https://github.com/js-sravan/querybird/issues)) with the label `enhancement` and describe:
 
 - The use case — what problem does it solve?
 - Proposed behaviour
