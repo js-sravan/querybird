@@ -2,7 +2,8 @@
 
 A lightweight PostgreSQL desktop client built with Go, Wails, React, and TypeScript.
 
-<img width="1723" height="1045" alt="image" src="https://github.com/user-attachments/assets/b8fdd107-a805-4989-8e2f-b16b89c27af7" />
+<img width="1723" height="1045" alt="image" src="https://github.com/user-attachments/assets/485c6532-8282-4166-b2d7-ad9427ff992b" />
+
 
 ## Features
 
