@@ -3,7 +3,7 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
-version="${1:-${VERSION:-0.1.0}}"
+version="${1:-${VERSION:-1.0.0}}"
 architecture="$(dpkg --print-architecture)"
 
 case "$version" in

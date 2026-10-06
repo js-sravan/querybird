@@ -1812,7 +1812,7 @@ function App() {
         <div className="dialog-backdrop" onClick={() => setIsAboutDialogOpen(false)}>
           <div className="dialog-card about-dialog" onClick={(event) => event.stopPropagation()}>
             <img className="about-logo" src="/querybird-logo-with-name.png" alt="QueryBird" />
-            <div className="about-version">Version 1.0</div>
+            <div className="about-version">Version 1.0.0</div>
             <p className="about-copy">A lightweight PostgreSQL client.</p>
             <p className="about-copy">© 2026 Sravan JS</p>
             <div className="dialog-actions compact-actions">

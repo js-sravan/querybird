@@ -1,5 +1,5 @@
 Package: querybird
-Version: 0.1.0
+Version: 1.0.0
 Section: database
 Priority: optional
 Architecture: amd64
