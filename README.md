@@ -30,7 +30,7 @@ A lightweight PostgreSQL desktop client built with Go, Wails, React, and TypeScr
 
 ## Download
 
-Pre-built macOS (Apple Silicon) DMG releases are available on the [Releases](https://github.com/sravanjs/querybird/releases) page.
+Pre-built macOS (Apple Silicon) DMG releases are available on the [Releases](https://github.com/js-sravan/querybird/releases) page.
 
 > **Note:** QueryBird is not notarized by Apple. On first launch macOS may show a security warning.
 > Right-click the app → **Open** → **Open** to bypass it, or run:
