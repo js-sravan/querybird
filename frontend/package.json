@@ -1,0 +1,30 @@
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@codemirror/lang-sql": "^6.10.0",
+    "@fontsource/roboto": "^5.3.0",
+    "@fontsource/source-code-pro": "^5.3.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@uiw/codemirror-theme-github": "^4.25.12",
+    "@uiw/react-codemirror": "^4.25.12",
+    "codemirror": "^6.0.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "^5.6.3",
+    "vite": "^7.0.0"
+  }
+}

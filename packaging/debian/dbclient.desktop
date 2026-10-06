@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=QueryBird
+Comment=Lightweight PostgreSQL desktop client
+Exec=/usr/bin/QueryBird
+Icon=QueryBird
+Terminal=false
+Type=Application
+Categories=Development;Database;
+StartupNotify=true

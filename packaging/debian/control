@@ -1,0 +1,9 @@
+Package: querybird
+Version: 0.1.0
+Section: database
+Priority: optional
+Architecture: amd64
+Maintainer: Sravan JS <mr.sravanjs@gmail.com>
+Depends: libgtk-3-0, libwebkit2gtk-4.1-0
+Description: QueryBird
+ A native-feeling PostgreSQL desktop client built with Wails and Go.
