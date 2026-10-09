@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"dbclient/internal/models"
 )
@@ -24,12 +25,8 @@ import (
 const maxQueryDisplayRunes = 500
 
 type Service struct {
-	Conn *pgx.Conn
-	// Mu must be held for the entire duration of every query against Conn.
-	// pgx *pgx.Conn is not goroutine-safe: attempting to run two queries
-	// concurrently on the same connection produces "conn busy" errors.
-	// The App layer passes this mutex in so that metadata and query services
-	// share the same lock over the single underlying connection.
+	Conn *pgxpool.Pool
+	// Mu is kept for signature compatibility but query execution on pool is fully concurrent.
 	Mu *sync.Mutex
 
 	// cancelMu guards cancelFn and isRunning.
@@ -38,7 +35,7 @@ type Service struct {
 	isRunning bool
 }
 
-func NewService(conn *pgx.Conn, mu *sync.Mutex) *Service {
+func NewService(conn *pgxpool.Pool, mu *sync.Mutex) *Service {
 	return &Service{Conn: conn, Mu: mu}
 }
 
@@ -64,8 +61,9 @@ func (s *Service) Cancel() {
 }
 
 func (s *Service) Execute(ctx context.Context, sql string) (*models.QueryResult, error) {
-	s.Mu.Lock()
-	defer s.Mu.Unlock()
+	if err := checkDestructiveQuerySafety(sql); err != nil {
+		return nil, err
+	}
 
 	// Wrap the caller's context with a cancel so CancelQuery can interrupt us.
 	queryCtx, cancel := context.WithCancel(ctx)
@@ -208,7 +206,7 @@ func truncateDisplayValue(v any, _ string, alreadyTruncated bool) (any, bool) {
 // The rewrite is O(1) extra round-trips: one pg_catalog query to fetch column
 // names and type OIDs, then the rewritten SELECT runs. This is equivalent to
 // what the table browser does internally via loadTableMeta + buildSelectCols.
-func rewriteSelectStar(sql string, conn *pgx.Conn, ctx context.Context) string {
+func rewriteSelectStar(sql string, conn *pgxpool.Pool, ctx context.Context) string {
 	schema, table, suffix, ok := parseSelectStar(sql)
 	if !ok {
 		return sql
@@ -329,9 +327,6 @@ func (s *Service) SaveQueryResultEdits(ctx context.Context, schema, table string
 	if len(updates) == 0 {
 		return nil
 	}
-
-	s.Mu.Lock()
-	defer s.Mu.Unlock()
 
 	tx, err := s.Conn.Begin(ctx)
 	if err != nil {
@@ -497,4 +492,34 @@ func normalizeValue(v any) any {
 	default:
 		return value
 	}
+}
+
+func checkDestructiveQuerySafety(sql string) error {
+	cleaned := strings.ToLower(strings.TrimSpace(sql))
+
+	// If the user explicitly bypassed the safety check, allow it.
+	if strings.Contains(cleaned, "-- safety-bypass") || strings.Contains(cleaned, "-- force") {
+		return nil
+	}
+
+	// Split by semicolon to analyze individual statements
+	statements := strings.Split(cleaned, ";")
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+
+		isUpdate := strings.HasPrefix(stmt, "update")
+		isDelete := strings.HasPrefix(stmt, "delete")
+
+		if (isUpdate || isDelete) && !strings.Contains(stmt, "where") {
+			action := "UPDATE"
+			if isDelete {
+				action = "DELETE"
+			}
+			return fmt.Errorf("safety warning: %s query has no WHERE clause, which would affect all rows. To run this anyway, add '-- safety-bypass' as a comment to your query", action)
+		}
+	}
+	return nil
 }

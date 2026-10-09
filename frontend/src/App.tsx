@@ -20,6 +20,8 @@ import {
   ListSchemas,
   SaveQueryResultEdits,
   TestConnection,
+  ExportTablesCSV,
+  BackupTablesSQL,
 } from '../wailsjs/go/main/App';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
@@ -202,6 +204,7 @@ type SqlWorkspace = {
   resultFilterOperator: TableLookupOperator;
   resultFilterValue: string;
   resultFilterActive: string;
+  resultPage?: number;
 };
 
 type WorkspaceItem = TableDataWorkspace | TableStructureWorkspace | SqlWorkspace;
@@ -273,6 +276,7 @@ function App() {
   const [connectionLost, setConnectionLost] = useState(false);
   const [status, setStatus] = useState('Disconnected');
   const [error, setError] = useState('');
+  const [connectionError, setConnectionError] = useState('');
   const [flashMessage, setFlashMessage] = useState('');
   const [flashKey, setFlashKey] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -314,6 +318,16 @@ function App() {
   const [isTableConfigDialogOpen, setIsTableConfigDialogOpen] = useState(false);
   const [tableConfigSearch, setTableConfigSearch] = useState('');
   const [selectedTableNames, setSelectedTableNames] = useState<string[]>([]);
+
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [exportSearch, setExportSearch] = useState('');
+  const [exportSelectedTables, setExportSelectedTables] = useState<string[]>([]);
+  const [exportIsRunning, setExportIsRunning] = useState(false);
+
+  const [isBackupDialogOpen, setIsBackupDialogOpen] = useState(false);
+  const [backupSearch, setBackupSearch] = useState('');
+  const [backupSelectedTables, setBackupSelectedTables] = useState<string[]>([]);
+  const [backupIsRunning, setBackupIsRunning] = useState(false);
   const sqlEditorViewRefs = useRef<Record<string, import('@codemirror/view').EditorView | null>>({});
 
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
@@ -404,6 +418,7 @@ function App() {
       username: config.username || defaultConfig.username,
       sslMode: config.sslMode || defaultConfig.sslMode,
     });
+    setConnectionError('');
     setIsConnectionDialogOpen(true);
   };
 
@@ -420,6 +435,7 @@ function App() {
       password: target.password ?? '',
       sslMode: target.sslMode,
     });
+    setConnectionError('');
     setIsConnectionDialogOpen(true);
   };
 
@@ -427,6 +443,7 @@ function App() {
     setIsConnectionDialogOpen(false);
     setConnectionDialogId(null);
     setConnectionDialogConfig({ ...defaultConfig, ...config });
+    setConnectionError('');
   };
 
   const saveConnectionToStorage = (entry: SavedConnection) => {
@@ -437,6 +454,7 @@ function App() {
 
   const handleConnectionDialogSave = async () => {
     try {
+      setConnectionError('');
       setError('');
       setStatus('Connecting...');
       setIsConnecting(true);
@@ -449,7 +467,7 @@ function App() {
       setStatus('Connection ready');
       showFlash('✓ Connection saved');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connection test failed');
+      setConnectionError(err instanceof Error ? err.message : 'Connection test failed');
       setStatus('Connection test failed');
     } finally {
       setIsConnecting(false);
@@ -458,12 +476,12 @@ function App() {
 
   const handleTestConnection = async (nextConfig: ConnectionConfig) => {
     try {
-      setError('');
+      setConnectionError('');
       await TestConnection(nextConfig);
       setStatus('Connection test succeeded');
       showFlash('✓ Connection test passed');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connection test failed');
+      setConnectionError(err instanceof Error ? err.message : 'Connection test failed');
       setStatus('Connection test failed');
     }
   };
@@ -744,7 +762,7 @@ function App() {
       queryResultTarget: null,
       pendingResultEdits: {},
       editingResultCell: null,
-      resultHeight: 230,
+      resultHeight: 400,
       isSavingResultEdits: false,
       isRunning: false,
       resultFilterColumn: '',
@@ -803,6 +821,116 @@ function App() {
     }
     setTableConfigSearch('');
     setIsTableConfigDialogOpen(true);
+  };
+
+  const openExportDialog = () => {
+    const tableNames = allSchemaTables.map((t) => t.name);
+    setExportSelectedTables([...tableNames]);
+    setExportSearch('');
+    setIsExportDialogOpen(true);
+  };
+
+  const toggleExportTableSelection = (tableName: string) => {
+    setExportSelectedTables((current) => (
+      current.includes(tableName)
+        ? current.filter((name) => name !== tableName)
+        : [...current, tableName]
+    ));
+  };
+
+  const selectAllExportTables = () => {
+    const matching = allSchemaTables
+      .map((t) => t.name)
+      .filter((name) => name.toLowerCase().includes(exportSearch.trim().toLowerCase()));
+    setExportSelectedTables((current) => Array.from(new Set([...current, ...matching])));
+  };
+
+  const deselectAllExportTables = () => {
+    if (exportSearch.trim()) {
+      const matchingSet = new Set(
+        allSchemaTables
+          .map((t) => t.name)
+          .filter((name) => name.toLowerCase().includes(exportSearch.trim().toLowerCase()))
+      );
+      setExportSelectedTables((current) => current.filter((name) => !matchingSet.has(name)));
+    } else {
+      setExportSelectedTables([]);
+    }
+  };
+
+  const handleExportSubmit = async () => {
+    if (exportSelectedTables.length === 0) {
+      setError('Please select at least one table to export');
+      return;
+    }
+    setError('');
+    setExportIsRunning(true);
+    try {
+      const savedPath = await ExportTablesCSV(selectedSchema, exportSelectedTables);
+      if (savedPath) {
+        showFlash(`✓ Exported ${exportSelectedTables.length} table(s) to ${savedPath}`);
+        setIsExportDialogOpen(false);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setExportIsRunning(false);
+    }
+  };
+
+  const openBackupDialog = () => {
+    const tableNames = allSchemaTables.map((t) => t.name);
+    setBackupSelectedTables([...tableNames]);
+    setBackupSearch('');
+    setIsBackupDialogOpen(true);
+  };
+
+  const toggleBackupTableSelection = (tableName: string) => {
+    setBackupSelectedTables((current) => (
+      current.includes(tableName)
+        ? current.filter((name) => name !== tableName)
+        : [...current, tableName]
+    ));
+  };
+
+  const selectAllBackupTables = () => {
+    const matching = allSchemaTables
+      .map((t) => t.name)
+      .filter((name) => name.toLowerCase().includes(backupSearch.trim().toLowerCase()));
+    setBackupSelectedTables((current) => Array.from(new Set([...current, ...matching])));
+  };
+
+  const deselectAllBackupTables = () => {
+    if (backupSearch.trim()) {
+      const matchingSet = new Set(
+        allSchemaTables
+          .map((t) => t.name)
+          .filter((name) => name.toLowerCase().includes(backupSearch.trim().toLowerCase()))
+      );
+      setBackupSelectedTables((current) => current.filter((name) => !matchingSet.has(name)));
+    } else {
+      setBackupSelectedTables([]);
+    }
+  };
+
+  const handleBackupSubmit = async () => {
+    if (backupSelectedTables.length === 0) {
+      setError('Please select at least one table to backup');
+      return;
+    }
+    setError('');
+    setBackupIsRunning(true);
+    try {
+      const savedPath = await BackupTablesSQL(selectedSchema, backupSelectedTables);
+      if (savedPath) {
+        showFlash(`✓ Backed up ${backupSelectedTables.length} table(s) to ${savedPath}`);
+        setIsBackupDialogOpen(false);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBackupIsRunning(false);
+    }
   };
 
   const toggleTableSelection = (tableName: string) => {
@@ -867,6 +995,7 @@ function App() {
         editingResultCell: null,
         queryResultTarget: null,
         isRunning: false,
+        resultPage: 1,
       });
       const source = parseEditableResultTarget(sqlText, workspace.schema ?? selectedSchema);
       if (source) {
@@ -1307,6 +1436,14 @@ function App() {
     const resultFilterNeedsValue = workspace.resultFilterOperator !== 'IS NULL' && workspace.resultFilterOperator !== 'IS NOT NULL';
     const filteredResultRows = getFilteredResultRows(workspace);
 
+    const pageSize = 200;
+    const currentPage = workspace.resultPage || 1;
+    const totalPages = Math.max(1, Math.ceil(filteredResultRows.length / pageSize));
+    const page = Math.min(currentPage, totalPages);
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedRows = filteredResultRows.slice(startIndex, endIndex);
+
     return (
       <div className="panel-card sql-panel" ref={(node) => { if (node) { /* no-op for ref */ } }}>
         <div className="editor-tools">
@@ -1365,12 +1502,12 @@ function App() {
           title="Drag to resize query results"
           onPointerDown={(event) => handleResultDividerPointerDown(workspace.id, event)}
           onPointerMove={(event) => handleResultDividerPointerMove(workspace.id, event)}
-          onDoubleClick={() => updateWorkspace(workspace.id, { resultHeight: 230 })}
+          onDoubleClick={() => updateWorkspace(workspace.id, { resultHeight: 400 })}
         />
         {workspace.queryResult ? (
           <div className="result-grid" style={{ height: workspace.resultHeight, flex: '0 0 auto' }}>
-            <div className="result-header">
-              <span>
+            <div className="result-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                 {workspace.resultFilterActive
                   ? `${filteredResultRows.length.toLocaleString()} of ${workspace.queryResult.rowCount.toLocaleString()} rows (filtered)`
                   : `${workspace.queryResult.rowCount.toLocaleString()} rows`}
@@ -1384,6 +1521,33 @@ function App() {
                     ? ` · ${workspace.lastExecutedSql.trim().slice(0, 60).replace(/\s+/g, ' ')}${workspace.lastExecutedSql.trim().length > 60 ? '…' : ''}`
                     : ''}
               </span>
+
+              {totalPages > 1 && (
+                <span className="result-pagination" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', marginRight: '16px' }}>
+                  <button
+                    className="mini-button"
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => updateWorkspace(workspace.id, { resultPage: page - 1 })}
+                    style={{ padding: '2px 8px', fontSize: '12px' }}
+                  >
+                    ◀ Prev
+                  </button>
+                  <span style={{ fontSize: '12.5px', opacity: 0.8 }}>
+                    Page <strong>{page}</strong> of <strong>{totalPages}</strong> (showing {(startIndex + 1).toLocaleString()}-{Math.min(endIndex, filteredResultRows.length).toLocaleString()})
+                  </span>
+                  <button
+                    className="mini-button"
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => updateWorkspace(workspace.id, { resultPage: page + 1 })}
+                    style={{ padding: '2px 8px', fontSize: '12px' }}
+                  >
+                    Next ▶
+                  </button>
+                </span>
+              )}
+
               <span className="result-edit-actions">
                 {workspace.queryResultTarget && (
                   <button className="toolbar-button" onClick={() => void handleSaveResultEdits(workspace.id)} disabled={Object.keys(workspace.pendingResultEdits).length === 0 || workspace.isSavingResultEdits}>
@@ -1448,9 +1612,11 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredResultRows.map((row, rowIndex) => (
-                    <tr key={`${workspace.id}-${rowIndex}-${JSON.stringify(row)}`} className={workspace.pendingResultEdits[rowIndex] ? 'row-pending' : ''}>
-                      {workspace.queryResult!.columns.map((column) => {
+                  {paginatedRows.map((row, paginatedRowIndex) => {
+                    const rowIndex = startIndex + paginatedRowIndex;
+                    return (
+                      <tr key={`${workspace.id}-${rowIndex}-${JSON.stringify(row)}`} className={workspace.pendingResultEdits[rowIndex] ? 'row-pending' : ''}>
+                        {workspace.queryResult!.columns.map((column) => {
                         const displayValue = Object.hasOwn(workspace.pendingResultEdits[rowIndex] ?? {}, column)
                           ? workspace.pendingResultEdits[rowIndex][column]
                           : row[column];
@@ -1514,7 +1680,8 @@ function App() {
                         );
                       })}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1552,6 +1719,16 @@ function App() {
                 </div>
               )}
             </div>
+            {connectionState && (
+              <>
+                <div className="menu-group">
+                  <button className="menu-button" type="button" onClick={() => { openExportDialog(); setActiveMainMenu(null); }}>Export</button>
+                </div>
+                <div className="menu-group">
+                  <button className="menu-button" type="button" onClick={() => { openBackupDialog(); setActiveMainMenu(null); }}>Backup</button>
+                </div>
+              </>
+            )}
             <div className="menu-group">
               <button className="menu-button" type="button" onClick={() => setActiveMainMenu((current) => current === 'settings' ? null : 'settings')}>Settings</button>
               {activeMainMenu === 'settings' && (
@@ -2186,6 +2363,252 @@ function App() {
         </div>
       )}
 
+      {isExportDialogOpen && connectionState && (
+        <div className="dialog-backdrop" onClick={() => setIsExportDialogOpen(false)}>
+          <div
+            className="dialog-card table-config-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="export-dialog-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="dialog-header">
+              <div>
+                <h3 id="export-dialog-title">Export Tables to CSV</h3>
+                <p className="dialog-subtitle">
+                  Database: <strong>{connectionState.database}</strong> &bull; Schema: <strong>{selectedSchema}</strong>
+                </p>
+              </div>
+              <button
+                className="toolbar-button"
+                type="button"
+                aria-label="Close"
+                onClick={() => setIsExportDialogOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="table-config-search-wrap">
+              <input
+                className="table-config-search"
+                type="text"
+                placeholder="⌕ Search tables..."
+                value={exportSearch}
+                onChange={(event) => setExportSearch(event.target.value)}
+                autoFocus
+              />
+              {exportSearch && (
+                <button
+                  className="table-config-search-clear"
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setExportSearch('')}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div className="table-config-toolbar">
+              <div className="table-config-quick-btns">
+                <button
+                  className="mini-button"
+                  type="button"
+                  onClick={selectAllExportTables}
+                >
+                  Select All
+                </button>
+                <button
+                  className="mini-button"
+                  type="button"
+                  onClick={deselectAllExportTables}
+                >
+                  Deselect All
+                </button>
+              </div>
+              <span className="table-config-count">
+                {exportSelectedTables.length} of {allSchemaTables.length} tables selected
+              </span>
+            </div>
+
+            <div className="table-config-list" role="group" aria-label="Export tables list">
+              {allSchemaTables.length === 0 ? (
+                <div className="table-config-empty">No tables found in this schema.</div>
+              ) : (() => {
+                const matchingTables = allSchemaTables.filter((t) =>
+                  t.name.toLowerCase().includes(exportSearch.trim().toLowerCase())
+                );
+                if (matchingTables.length === 0) {
+                  return <div className="table-config-empty">No tables match &quot;{exportSearch}&quot;</div>;
+                }
+                return matchingTables.map((t) => {
+                  const isChecked = exportSelectedTables.includes(t.name);
+                  return (
+                    <label
+                      key={t.name}
+                      className={`table-config-item ${isChecked ? 'selected' : ''}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleExportTableSelection(t.name)}
+                      />
+                      <span className="object-icon table" aria-hidden="true">▤</span>
+                      <span className="table-config-item-name">{t.name}</span>
+                    </label>
+                  );
+                });
+              })()}
+            </div>
+
+            <div className="dialog-actions table-config-dialog-actions">
+              <div className="table-config-action-group" style={{ marginLeft: 'auto' }}>
+                <button
+                  className="toolbar-button"
+                  type="button"
+                  onClick={() => setIsExportDialogOpen(false)}
+                  disabled={exportIsRunning}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={handleExportSubmit}
+                  disabled={exportIsRunning}
+                >
+                  {exportIsRunning ? 'Exporting...' : 'Export'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isBackupDialogOpen && connectionState && (
+        <div className="dialog-backdrop" onClick={() => setIsBackupDialogOpen(false)}>
+          <div
+            className="dialog-card table-config-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="backup-dialog-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="dialog-header">
+              <div>
+                <h3 id="backup-dialog-title">Backup Tables to SQL</h3>
+                <p className="dialog-subtitle">
+                  Database: <strong>{connectionState.database}</strong> &bull; Schema: <strong>{selectedSchema}</strong>
+                </p>
+              </div>
+              <button
+                className="toolbar-button"
+                type="button"
+                aria-label="Close"
+                onClick={() => setIsBackupDialogOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="table-config-search-wrap">
+              <input
+                className="table-config-search"
+                type="text"
+                placeholder="⌕ Search tables..."
+                value={backupSearch}
+                onChange={(event) => setBackupSearch(event.target.value)}
+                autoFocus
+              />
+              {backupSearch && (
+                <button
+                  className="table-config-search-clear"
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setBackupSearch('')}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div className="table-config-toolbar">
+              <div className="table-config-quick-btns">
+                <button
+                  className="mini-button"
+                  type="button"
+                  onClick={selectAllBackupTables}
+                >
+                  Select All
+                </button>
+                <button
+                  className="mini-button"
+                  type="button"
+                  onClick={deselectAllBackupTables}
+                >
+                  Deselect All
+                </button>
+              </div>
+              <span className="table-config-count">
+                {backupSelectedTables.length} of {allSchemaTables.length} tables selected
+              </span>
+            </div>
+
+            <div className="table-config-list" role="group" aria-label="Backup tables list">
+              {allSchemaTables.length === 0 ? (
+                <div className="table-config-empty">No tables found in this schema.</div>
+              ) : (() => {
+                const matchingTables = allSchemaTables.filter((t) =>
+                  t.name.toLowerCase().includes(backupSearch.trim().toLowerCase())
+                );
+                if (matchingTables.length === 0) {
+                  return <div className="table-config-empty">No tables match &quot;{backupSearch}&quot;</div>;
+                }
+                return matchingTables.map((t) => {
+                  const isChecked = backupSelectedTables.includes(t.name);
+                  return (
+                    <label
+                      key={t.name}
+                      className={`table-config-item ${isChecked ? 'selected' : ''}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleBackupTableSelection(t.name)}
+                      />
+                      <span className="object-icon table" aria-hidden="true">▤</span>
+                      <span className="table-config-item-name">{t.name}</span>
+                    </label>
+                  );
+                });
+              })()}
+            </div>
+
+            <div className="dialog-actions table-config-dialog-actions">
+              <div className="table-config-action-group" style={{ marginLeft: 'auto' }}>
+                <button
+                  className="toolbar-button"
+                  type="button"
+                  onClick={() => setIsBackupDialogOpen(false)}
+                  disabled={backupIsRunning}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={handleBackupSubmit}
+                  disabled={backupIsRunning}
+                >
+                  {backupIsRunning ? 'Backing up...' : 'Backup'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isConnectionDialogOpen && (
         <div className="dialog-backdrop" onClick={closeConnectionDialog}>
           <div
@@ -2198,6 +2621,12 @@ function App() {
             <div className="dialog-header">
               <h3 id="connection-dialog-title">{connectionDialogMode === 'edit' ? 'Edit Connection' : 'New Connection'}</h3>
             </div>
+            {connectionError && (
+              <div className="error-banner" style={{ margin: '0 0 16px 0', borderRadius: '6px', position: 'static' }}>
+                <span className="error-banner-text">{connectionError}</span>
+                <button className="error-dismiss" aria-label="Dismiss error" onClick={() => setConnectionError('')}>×</button>
+              </div>
+            )}
             <div className="dialog-grid">
               <label>
                 <span>Connection Name</span>

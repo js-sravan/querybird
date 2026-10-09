@@ -3,13 +3,17 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 
 	"dbclient/internal/models"
 	"dbclient/internal/postgres/connection"
+	"dbclient/internal/postgres/export"
 	"dbclient/internal/postgres/metadata"
 	"dbclient/internal/postgres/query"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
@@ -18,6 +22,7 @@ type App struct {
 	conn   *connection.Service
 	meta   *metadata.Service
 	qrySvc *query.Service
+	expSvc *export.Service
 	// connMu serializes all queries against the single *pgx.Conn.
 	// pgx single connections are not concurrency-safe; sharing this mutex
 	// between meta and qrySvc ensures only one query runs at a time.
@@ -46,6 +51,7 @@ func (a *App) Connect(cfg models.ConnectionConfig) (*models.ConnectionState, err
 	a.connMu = sync.Mutex{}
 	a.meta = metadata.NewService(a.conn.Conn, &a.connMu)
 	a.qrySvc = query.NewService(a.conn.Conn, &a.connMu)
+	a.expSvc = export.NewService(a.conn.Conn, &a.connMu)
 	// Fetch databases + schemas in one batched round-trip and return them
 	// with the state so the frontend needs zero extra RPCs after Connect.
 	dbs, schemas, err := a.meta.DatabasesAndSchemas(a.ctx)
@@ -63,6 +69,7 @@ func (a *App) Disconnect() error {
 	a.conn.Close(a.ctx)
 	a.meta = nil
 	a.qrySvc = nil
+	a.expSvc = nil
 	return nil
 }
 
@@ -90,6 +97,7 @@ func (a *App) handleDBError(err error) error {
 		a.conn.MarkDisconnected()
 		a.meta = nil
 		a.qrySvc = nil
+		a.expSvc = nil
 	}
 	return classified
 }
@@ -182,4 +190,68 @@ func (a *App) InvalidateTableCache(schema, table string) {
 	if a.meta != nil {
 		a.meta.InvalidateTableCache(schema, table)
 	}
+}
+
+// ExportTablesCSV prompts the user with a save file dialog and exports selected tables to CSV (in a ZIP file).
+func (a *App) ExportTablesCSV(schema string, tables []string) (string, error) {
+	if !a.IsConnected() {
+		return "", errors.New("not connected")
+	}
+	if len(tables) == 0 {
+		return "", errors.New("no tables selected")
+	}
+
+	// Show Wails SaveFileDialog
+	destPath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		DefaultFilename: fmt.Sprintf("%s_%s_export.zip", a.conn.Cfg.Database, schema),
+		Title:           "Export CSVs to ZIP",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "ZIP Files (*.zip)", Pattern: "*.zip"},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if destPath == "" {
+		return "", nil // user cancelled
+	}
+
+	err = a.expSvc.ExportCSV(a.ctx, schema, tables, destPath)
+	if err != nil {
+		return "", a.handleDBError(err)
+	}
+
+	return destPath, nil
+}
+
+// BackupTablesSQL prompts the user with a save file dialog and backs up selected tables to SQL.
+func (a *App) BackupTablesSQL(schema string, tables []string) (string, error) {
+	if !a.IsConnected() {
+		return "", errors.New("not connected")
+	}
+	if len(tables) == 0 {
+		return "", errors.New("no tables selected")
+	}
+
+	// Show Wails SaveFileDialog
+	destPath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		DefaultFilename: fmt.Sprintf("%s_%s_backup.sql", a.conn.Cfg.Database, schema),
+		Title:           "Backup Tables to SQL",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "SQL Files (*.sql)", Pattern: "*.sql"},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if destPath == "" {
+		return "", nil // user cancelled
+	}
+
+	err = a.expSvc.BackupSQL(a.ctx, schema, tables, destPath)
+	if err != nil {
+		return "", a.handleDBError(err)
+	}
+
+	return destPath, nil
 }
