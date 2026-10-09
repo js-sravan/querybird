@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"dbclient/internal/models"
 )
@@ -41,7 +42,7 @@ var safeFilterOperators = map[string]string{
 }
 
 type Service struct {
-	Conn *pgx.Conn
+	Conn *pgxpool.Pool
 	// Mu is the shared connection mutex; must be held for every query on Conn.
 	// Shared with query.Service so the two never race on the same *pgx.Conn.
 	Mu *sync.Mutex
@@ -55,7 +56,7 @@ type Service struct {
 	structureCache   map[string][]models.ColumnInfo
 }
 
-func NewService(conn *pgx.Conn, mu *sync.Mutex) *Service {
+func NewService(conn *pgxpool.Pool, mu *sync.Mutex) *Service {
 	return &Service{
 		Conn:           conn,
 		Mu:             mu,
